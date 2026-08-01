@@ -14,68 +14,77 @@
       font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       text-align: center;
       padding: 20px;
-      background: #eef2f5;
-      color: #333;
+      /* Yellow background theme */
+      background: #f1c40f; 
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .card {
-      background: white;
+      background: #1a1a1a;
+      color: #ffffff;
+      width: 100%;
       max-width: 420px;
-      margin: 20px auto;
       padding: 25px;
-      border-radius: 16px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
     }
     h2 {
       margin-bottom: 20px;
-      color: #1a252f;
+      color: #f1c40f;
     }
     .metric-box {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 15px;
+      background: #2a2a2a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 18px;
       margin-bottom: 15px;
     }
     .label {
-      font-size: 0.9rem;
-      color: #64748b;
+      font-size: 0.85rem;
+      color: #a0a0a0;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
       font-weight: 600;
     }
     .metric {
       font-size: 2.2rem;
       font-weight: 700;
-      color: #0f172a;
+      color: #ffffff;
       margin-top: 5px;
     }
     .btn-group {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
       margin-top: 20px;
     }
     button {
-      padding: 14px 20px;
+      padding: 15px 20px;
       font-size: 1rem;
-      font-weight: 600;
+      font-weight: 700;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: pointer;
-      transition: background 0.2s ease;
+      transition: transform 0.1s ease, background 0.2s ease;
     }
-    .btn-start { background: #10b981; color: white; }
-    .btn-start:hover { background: #059669; }
-    .btn-stop { background: #ef4444; color: white; }
-    .btn-stop:hover { background: #dc2626; }
-    .btn-reset { background: #64748b; color: white; }
-    .btn-reset:hover { background: #475569; }
+    button:active {
+      transform: scale(0.98);
+    }
+    .btn-start { background: #27ae60; color: white; }
+    .btn-start:hover { background: #219653; }
+    .btn-stop { background: #e74c3c; color: white; }
+    .btn-stop:hover { background: #c0392b; }
+    .btn-reset { background: #4a4a4a; color: white; }
+    .btn-reset:hover { background: #333333; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h2>Ride Fare Tracker</h2>
+    <h2>🚕 Ride Fare Tracker</h2>
     
     <div class="metric-box">
       <div class="label">Distance Traveled</div>
@@ -84,7 +93,7 @@
     
     <div class="metric-box">
       <div class="label">Total Fare (₹10 / km)</div>
-      <div class="metric" id="fare">₹--.--</div>
+      <div class="metric" id="fare" style="color: #f1c40f;">₹--.--</div>
     </div>
     
     <div class="btn-group">
@@ -95,16 +104,16 @@
   </div>
 
   <script>
-    // Rate Configuration: ₹10 per km
+    // Fare Rate Configuration: ₹10 per km
     const RATE_PER_KM = 10;
 
     let watchId = null;
     let totalDistance = 0; // in km
     let lastCoords = null;
 
-    // Haversine formula to compute distance between two GPS points
+    // Haversine formula to compute distance between two GPS coordinates
     function getDistanceInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371; // Earth radius in km
+      const R = 6371; // Earth's radius in km
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
       const a = 
@@ -115,21 +124,43 @@
       return R * c; 
     }
 
-    function startRide() {
+    // Sends mobile background notification showing live distance
+    function sendNotification(title, body) {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const notif = new Notification(title, {
+          body: body,
+          tag: "mobile-tracker-status", // Overwrites previous notification so popups don't stack
+          renotify: true
+        });
+
+        notif.onclick = function() {
+          window.focus(); // Focuses back to tab on click
+        };
+      }
+    }
+
+    async function startRide() {
+      // 1. Request Notification Permission for Mobile Status Bar Updates
+      if ("Notification" in window && Notification.permission !== "granted") {
+        await Notification.requestPermission();
+      }
+
+      // 2. Start Continuous GPS Tracking
       if ("geolocation" in navigator) {
-        // Clear fare display when starting a new trip
-        document.getElementById('fare').innerText = "₹--.--";
+        document.getElementById('fare').innerText = "₹--.--"; // Keep fare hidden
 
         watchId = navigator.geolocation.watchPosition(
           updatePosition,
-          (err) => console.warn("GPS Error: " + err.message),
+          (err) => console.warn("GPS Notice:", err.message),
           { 
             enableHighAccuracy: false,
             maximumAge: 3000,
             timeout: 20000 
           }
         );
-        alert("Tracking started! Fare will calculate when you click 'Stop Tracking'.");
+
+        sendNotification("Ride Started 🚕", "Distance: 0.00 km | Fare will display when stopped.");
+        alert("Tracking started! Check your mobile notifications for live distance.");
       } else {
         alert("Geolocation is not supported on this browser.");
       }
@@ -146,7 +177,7 @@
           longitude
         );
         
-        // Filter out small GPS jitter (under 5 meters)
+        // Filter out GPS jitter under 5 meters
         if (distDelta > 0.005) {
           totalDistance += distDelta;
           lastCoords = { latitude, longitude };
@@ -155,8 +186,11 @@
         lastCoords = { latitude, longitude };
       }
 
-      // Update distance only on screen while tracking
+      // Update distance on UI screen
       document.getElementById('distance').innerText = `${totalDistance.toFixed(2)} km`;
+
+      // Update mobile notification with current distance (Fare stays hidden)
+      sendNotification("Ride in Progress 📍", `Distance Traveled: ${totalDistance.toFixed(2)} km`);
     }
 
     function stopRide() {
@@ -168,26 +202,28 @@
         // Calculate and reveal final fare ONLY on stop
         const finalFare = totalDistance * RATE_PER_KM;
         document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
-        
-        alert("Trip Stopped! Final fare calculated.");
+
+        // Send final notification showing total distance and final fare
+        sendNotification("Trip Stopped 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
+
+        alert(`Trip Stopped!\nTotal Distance: ${totalDistance.toFixed(2)} km\nFinal Fare: ₹${finalFare.toFixed(2)}`);
       } else {
         alert("Tracking is not currently active.");
       }
     }
 
     function resetRide() {
-      // Stop tracking if currently active
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
       }
       
-      // Reset variables & UI
       totalDistance = 0;
       lastCoords = null;
       document.getElementById('distance').innerText = "0.00 km";
       document.getElementById('fare').innerText = "₹0.00";
-      
+
+      sendNotification("Tracker Reset 🔄", "Distance and fare reset to zero.");
       alert("Tracker has been reset.");
     }
   </script>
