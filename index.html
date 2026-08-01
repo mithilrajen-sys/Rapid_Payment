@@ -73,9 +73,13 @@
     button:active {
       transform: scale(0.98);
     }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     .btn-start { background: #27ae60; color: white; }
-    .btn-start:hover { background: #219653; }
-    .btn-stop { background: #e74c3c; color: white; }
+    .btn-start:hover:not(:disabled) { background: #219653; }
+    .btn-stop { background: #e74c3c; color: white; display: none; } /* Hidden by default */
     .btn-stop:hover { background: #c0392b; }
     .btn-reset { background: #4a4a4a; color: white; }
     .btn-reset:hover { background: #333333; }
@@ -97,9 +101,9 @@
     </div>
     
     <div class="btn-group">
-      <button class="btn-start" onclick="startRide()">Start Tracking</button>
-      <button class="btn-stop" onclick="stopRide()">Stop Tracking</button>
-      <button class="btn-reset" onclick="resetRide()">Reset</button>
+      <button class="btn-start" id="startBtn" onclick="startRide()">Start Tracking</button>
+      <button class="btn-stop" id="stopBtn" onclick="stopRide()">End Trip</button>
+      <button class="btn-reset" id="resetBtn" onclick="resetRide()">Reset</button>
     </div>
   </div>
 
@@ -159,8 +163,14 @@
           }
         );
 
-        sendNotification("Ride Started 🚕", "Distance: 0.00 km | Fare will display when stopped.");
-        alert("Tracking started! Check your mobile notifications for live distance.");
+        // UI State Change: Disable & Hide "Start Tracking", Show "End Trip"
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        startBtn.disabled = true;
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+
+        sendNotification("Ride Started 🚕", "Distance: 0.00 km | Fare will display when trip ends.");
       } else {
         alert("Geolocation is not supported on this browser.");
       }
@@ -203,10 +213,15 @@
         const finalFare = totalDistance * RATE_PER_KM;
         document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
 
-        // Send final notification showing total distance and final fare
-        sendNotification("Trip Stopped 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
+        // UI State Change: Re-enable "Start Tracking" and Hide "End Trip"
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        startBtn.disabled = false;
+        startBtn.style.display = 'block';
+        stopBtn.style.display = 'none';
 
-        alert(`Trip Stopped!\nTotal Distance: ${totalDistance.toFixed(2)} km\nFinal Fare: ₹${finalFare.toFixed(2)}`);
+        // Send final notification showing total distance and final fare
+        sendNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
       } else {
         alert("Tracking is not currently active.");
       }
@@ -223,8 +238,14 @@
       document.getElementById('distance').innerText = "0.00 km";
       document.getElementById('fare').innerText = "₹0.00";
 
+      // UI State Change: Ensure buttons are back to default state
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      startBtn.disabled = false;
+      startBtn.style.display = 'block';
+      stopBtn.style.display = 'none';
+
       sendNotification("Tracker Reset 🔄", "Distance and fare reset to zero.");
-      alert("Tracker has been reset.");
     }
   </script>
 </body>
