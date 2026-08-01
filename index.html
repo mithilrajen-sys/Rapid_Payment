@@ -66,6 +66,77 @@
     .btn-start { background: #27ae60; color: white; }
     .btn-stop { background: #e74c3c; color: white; display: none; }
     .btn-reset { background: #4a4a4a; color: white; }
+
+    /* Payment Modal Styling */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      padding: 20px;
+    }
+    .modal-content {
+      background: #1a1a1a;
+      color: #ffffff;
+      border-radius: 20px;
+      padding: 25px;
+      width: 100%;
+      max-width: 380px;
+      border: 1px solid #333;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .modal-title {
+      font-size: 1.2rem;
+      color: #f1c40f;
+      margin-bottom: 10px;
+    }
+    .modal-amount {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #27ae60;
+      margin-bottom: 20px;
+    }
+    .bank-option {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      text-align: left;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .bank-option:hover {
+      background: #333;
+      border-color: #f1c40f;
+    }
+    .bank-name {
+      font-weight: bold;
+      font-size: 1rem;
+      color: #ffffff;
+    }
+    .bank-upi {
+      font-size: 0.8rem;
+      color: #a0a0a0;
+      margin-top: 3px;
+    }
+    .modal-close {
+      background: transparent;
+      border: 1px solid #555;
+      color: #aaa;
+      padding: 10px;
+      width: 100%;
+      margin-top: 10px;
+      border-radius: 8px;
+    }
   </style>
 </head>
 <body>
@@ -90,21 +161,48 @@
     </div>
   </div>
 
+  <!-- Bank Account Selection Modal -->
+  <div class="modal-overlay" id="paymentModal">
+    <div class="modal-content">
+      <div class="modal-title">Select Receiving Bank Account</div>
+      <div class="modal-amount" id="modalFareText">₹0.00</div>
+
+      <div class="bank-option" onclick="payViaUPI('7339519500@ptyes', 'Indian Bank')">
+        <div>
+          <div class="bank-name">🏦 Indian Bank</div>
+          <div class="bank-upi">7339519500@ptyes</div>
+        </div>
+        <span style="color:#f1c40f; font-size: 1.2rem;">➔</span>
+      </div>
+
+      <div class="bank-option" onclick="payViaUPI('rmithil03@okhdfcbank', 'Union Bank')">
+        <div>
+          <div class="bank-name">🏦 Union Bank</div>
+          <div class="bank-upi">rmithil03@okhdfcbank</div>
+        </div>
+        <span style="color:#f1c40f; font-size: 1.2rem;">➔</span>
+      </div>
+
+      <button class="modal-close" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+
   <script>
     const RATE_PER_KM = 10;
     let watchId = null;
     let totalDistance = 0;
     let lastCoords = null;
     let swRegistration = null;
+    let calculatedFare = 0;
 
-    // Register Service Worker
+    // Service Worker Registration
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
         .then(reg => { swRegistration = reg; })
         .catch(err => console.error("SW registration failed:", err));
     }
 
-    // Restore cached state if page reloads
+    // Restore cached session
     window.addEventListener('DOMContentLoaded', () => {
       const savedDist = localStorage.getItem('totalDistance');
       if (savedDist) {
@@ -143,13 +241,8 @@
     }
 
     async function startRide(isResuming = false) {
-      // 1. Force Request Notification Permission
       if ("Notification" in window) {
-        const perm = await Notification.requestPermission();
-        if (perm !== "granted") {
-          alert("Enable notifications in browser settings to see status updates!");
-          return;
-        }
+        await Notification.requestPermission();
       }
 
       if ("geolocation" in navigator) {
@@ -159,7 +252,6 @@
         document.getElementById('stopBtn').style.display = 'block';
         document.getElementById('fare').innerText = "₹--.--";
 
-        // Push immediate starting notification
         sendSystemNotification("Ride Active 🚕", `Distance Traveled: ${totalDistance.toFixed(2)} km`);
 
         watchId = navigator.geolocation.watchPosition(
@@ -175,10 +267,9 @@
 
       if (lastCoords) {
         const distDelta = getDistanceInKm(lastCoords.latitude, lastCoords.longitude, latitude, longitude);
-        if (distDelta > 0.003) { // 3 meter movement threshold
+        if (distDelta > 0.003) {
           totalDistance += distDelta;
           lastCoords = { latitude, longitude };
-
           localStorage.setItem('totalDistance', totalDistance);
         }
       } else {
@@ -188,7 +279,6 @@
       const distText = `${totalDistance.toFixed(2)} km`;
       document.getElementById('distance').innerText = distText;
 
-      // Send Service Worker Notification
       sendSystemNotification("Ride in Progress 📍", `Distance Traveled: ${distText}`);
     }
 
@@ -198,13 +288,36 @@
       lastCoords = null;
       localStorage.setItem('isTracking', 'false');
 
-      const finalFare = totalDistance * RATE_PER_KM;
-      document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
-
+      calculatedFare = totalDistance * RATE_PER_KM;
+      const formattedFare = `₹${calculatedFare.toFixed(2)}`;
+      
+      document.getElementById('fare').innerText = formattedFare;
       document.getElementById('startBtn').style.display = 'block';
       document.getElementById('stopBtn').style.display = 'none';
 
-      sendSystemNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
+      sendSystemNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ${formattedFare}`);
+
+      // Open Payment Modal
+      document.getElementById('modalFareText').innerText = formattedFare;
+      document.getElementById('paymentModal').style.display = 'flex';
+    }
+
+    function payViaUPI(upiId, bankName) {
+      // Copy UPI ID to clipboard
+      navigator.clipboard.writeText(upiId);
+
+      // Deep-link trigger for phone's UPI Apps
+      const amount = calculatedFare.toFixed(2);
+      const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(bankName)}&am=${amount}&cu=INR`;
+
+      sendSystemNotification("Payment Initiated 💳", `Transferring ${document.getElementById('modalFareText').innerText} to ${bankName}`);
+
+      // Redirect to UPI App on Mobile
+      window.location.href = upiUrl;
+    }
+
+    function closeModal() {
+      document.getElementById('paymentModal').style.display = 'none';
     }
 
     function resetRide() {
