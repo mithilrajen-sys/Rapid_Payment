@@ -3,13 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fare & Distance Tracker</title>
+  <title>Rapido Fare Tracker</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       text-align: center;
@@ -30,10 +26,7 @@
       border-radius: 20px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
     }
-    h2 {
-      margin-bottom: 20px;
-      color: #f1c40f;
-    }
+    h2 { margin-bottom: 20px; color: #f1c40f; }
     .metric-box {
       background: #2a2a2a;
       border: 1px solid #333;
@@ -67,21 +60,18 @@
       border: none;
       border-radius: 10px;
       cursor: pointer;
-      transition: transform 0.1s ease, background 0.2s ease;
+      transition: transform 0.1s ease;
     }
     button:active { transform: scale(0.98); }
     .btn-start { background: #27ae60; color: white; }
-    .btn-start:hover { background: #219653; }
     .btn-stop { background: #e74c3c; color: white; display: none; }
-    .btn-stop:hover { background: #c0392b; }
     .btn-reset { background: #4a4a4a; color: white; }
-    .btn-reset:hover { background: #333333; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h2>🚕 Ride Fare Tracker</h2>
+    <h2>🚕 Rapido Fare Tracker</h2>
     
     <div class="metric-box">
       <div class="label">Distance Traveled</div>
@@ -103,9 +93,28 @@
   <script>
     const RATE_PER_KM = 10;
     let watchId = null;
-    let timerId = null;
     let totalDistance = 0;
     let lastCoords = null;
+    let swRegistration = null;
+
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => { swRegistration = reg; })
+        .catch(err => console.error("SW registration failed:", err));
+    }
+
+    // Restore cached state if page reloads
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedDist = localStorage.getItem('totalDistance');
+      if (savedDist) {
+        totalDistance = parseFloat(savedDist);
+        document.getElementById('distance').innerText = `${totalDistance.toFixed(2)} km`;
+      }
+      if (localStorage.getItem('isTracking') === 'true') {
+        startRide(true);
+      }
+    });
 
     function getDistanceInKm(lat1, lon1, lat2, lon2) {
       const R = 6371;
@@ -119,49 +128,44 @@
       return R * c; 
     }
 
-    // Force notification to show immediately
-    function pushNotification(title, body) {
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(title, {
-          body: body,
-          tag: 'ride-tracker-notification', // Keeps replacing the same notification card
-          renotify: true
-        });
+    function sendSystemNotification(title, body) {
+      if (swRegistration && Notification.permission === "granted") {
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            title: title,
+            body: body
+          });
+        } else {
+          swRegistration.showNotification(title, { body: body, tag: 'rapido-tracker-status' });
+        }
       }
     }
 
-    async function startRide() {
+    async function startRide(isResuming = false) {
       // 1. Force Request Notification Permission
       if ("Notification" in window) {
         const perm = await Notification.requestPermission();
         if (perm !== "granted") {
-          alert("Notification permission was denied! Check phone settings.");
+          alert("Enable notifications in browser settings to see status updates!");
           return;
         }
-      } else {
-        alert("Notifications are not supported on this device.");
-        return;
       }
 
-      // 2. Hide Start Button, Show End Trip Button
-      document.getElementById('startBtn').style.display = 'none';
-      document.getElementById('stopBtn').style.display = 'block';
-      document.getElementById('fare').innerText = "₹--.--";
-
-      // 3. Immediately trigger first notification popup
-      pushNotification("Ride Started 🚕", "Tracking Active. Distance: 0.00 km");
-
-      // 4. Start Timer Interval (forces notification to update every 3 seconds even if stationary)
-      timerId = setInterval(() => {
-        pushNotification("Ride in Progress 📍", `Distance Traveled: ${totalDistance.toFixed(2)} km`);
-      }, 3000);
-
-      // 5. Start GPS tracking
       if ("geolocation" in navigator) {
+        localStorage.setItem('isTracking', 'true');
+
+        document.getElementById('startBtn').style.display = 'none';
+        document.getElementById('stopBtn').style.display = 'block';
+        document.getElementById('fare').innerText = "₹--.--";
+
+        // Push immediate starting notification
+        sendSystemNotification("Ride Active 🚕", `Distance Traveled: ${totalDistance.toFixed(2)} km`);
+
         watchId = navigator.geolocation.watchPosition(
           updatePosition,
-          (err) => console.warn("GPS Warning: " + err.message),
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+          (err) => console.warn("GPS Warning:", err.message),
+          { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
         );
       }
     }
@@ -171,46 +175,46 @@
 
       if (lastCoords) {
         const distDelta = getDistanceInKm(lastCoords.latitude, lastCoords.longitude, latitude, longitude);
-        if (distDelta > 0.003) { // 3 meters movement threshold
+        if (distDelta > 0.003) { // 3 meter movement threshold
           totalDistance += distDelta;
           lastCoords = { latitude, longitude };
+
+          localStorage.setItem('totalDistance', totalDistance);
         }
       } else {
         lastCoords = { latitude, longitude };
       }
 
-      document.getElementById('distance').innerText = `${totalDistance.toFixed(2)} km`;
+      const distText = `${totalDistance.toFixed(2)} km`;
+      document.getElementById('distance').innerText = distText;
+
+      // Send Service Worker Notification
+      sendSystemNotification("Ride in Progress 📍", `Distance Traveled: ${distText}`);
     }
 
     function stopRide() {
-      // Clear GPS and Timers
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      if (timerId !== null) clearInterval(timerId);
-      
       watchId = null;
-      timerId = null;
       lastCoords = null;
+      localStorage.setItem('isTracking', 'false');
 
-      // Calculate final fare ONLY when stopped
       const finalFare = totalDistance * RATE_PER_KM;
       document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
 
-      // Switch buttons back
       document.getElementById('startBtn').style.display = 'block';
       document.getElementById('stopBtn').style.display = 'none';
 
-      // Send final stop notification
-      pushNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
+      sendSystemNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
     }
 
     function resetRide() {
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      if (timerId !== null) clearInterval(timerId);
-
       watchId = null;
-      timerId = null;
       totalDistance = 0;
       lastCoords = null;
+
+      localStorage.removeItem('totalDistance');
+      localStorage.removeItem('isTracking');
 
       document.getElementById('distance').innerText = "0.00 km";
       document.getElementById('fare').innerText = "₹0.00";
@@ -218,7 +222,7 @@
       document.getElementById('startBtn').style.display = 'block';
       document.getElementById('stopBtn').style.display = 'none';
 
-      pushNotification("Tracker Reset 🔄", "Distance & fare reset to zero.");
+      sendSystemNotification("Tracker Reset 🔄", "Distance and fare reset to zero.");
     }
   </script>
 </body>
