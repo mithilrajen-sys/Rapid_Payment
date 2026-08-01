@@ -70,9 +70,8 @@
       transition: transform 0.1s ease, background 0.2s ease;
     }
     button:active { transform: scale(0.98); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-start { background: #27ae60; color: white; }
-    .btn-start:hover:not(:disabled) { background: #219653; }
+    .btn-start:hover { background: #219653; }
     .btn-stop { background: #e74c3c; color: white; display: none; }
     .btn-stop:hover { background: #c0392b; }
     .btn-reset { background: #4a4a4a; color: white; }
@@ -104,16 +103,9 @@
   <script>
     const RATE_PER_KM = 10;
     let watchId = null;
+    let timerId = null;
     let totalDistance = 0;
     let lastCoords = null;
-    let swRegistration = null;
-
-    // Register Service Worker on Load
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(reg => { swRegistration = reg; })
-        .catch(err => console.error("Service Worker failed:", err));
-    }
 
     function getDistanceInKm(lat1, lon1, lat2, lon2) {
       const R = 6371;
@@ -127,48 +119,50 @@
       return R * c; 
     }
 
-    // Sends notification request to the registered Service Worker
-    function sendNotification(title, body) {
-      if (swRegistration && Notification.permission === "granted") {
-        if (navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({
-            type: 'UPDATE_NOTIFICATION',
-            title: title,
-            body: body
-          });
-        } else {
-          swRegistration.showNotification(title, { body: body, tag: 'ride-tracker-status' });
-        }
+    // Force notification to show immediately
+    function pushNotification(title, body) {
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, {
+          body: body,
+          tag: 'ride-tracker-notification', // Keeps replacing the same notification card
+          renotify: true
+        });
       }
     }
 
     async function startRide() {
-      if ("Notification" in window && Notification.permission !== "granted") {
-        await Notification.requestPermission();
+      // 1. Force Request Notification Permission
+      if ("Notification" in window) {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") {
+          alert("Notification permission was denied! Check phone settings.");
+          return;
+        }
+      } else {
+        alert("Notifications are not supported on this device.");
+        return;
       }
 
-      if ("geolocation" in navigator) {
-        document.getElementById('fare').innerText = "₹--.--";
+      // 2. Hide Start Button, Show End Trip Button
+      document.getElementById('startBtn').style.display = 'none';
+      document.getElementById('stopBtn').style.display = 'block';
+      document.getElementById('fare').innerText = "₹--.--";
 
+      // 3. Immediately trigger first notification popup
+      pushNotification("Ride Started 🚕", "Tracking Active. Distance: 0.00 km");
+
+      // 4. Start Timer Interval (forces notification to update every 3 seconds even if stationary)
+      timerId = setInterval(() => {
+        pushNotification("Ride in Progress 📍", `Distance Traveled: ${totalDistance.toFixed(2)} km`);
+      }, 3000);
+
+      // 5. Start GPS tracking
+      if ("geolocation" in navigator) {
         watchId = navigator.geolocation.watchPosition(
           updatePosition,
-          (err) => console.warn("GPS Notice:", err.message),
-          { 
-            enableHighAccuracy: true, // Set to true for mobile outdoors
-            maximumAge: 1000,
-            timeout: 20000 
-          }
+          (err) => console.warn("GPS Warning: " + err.message),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
         );
-
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        startBtn.disabled = true;
-        startBtn.style.display = 'none';
-        stopBtn.style.display = 'block';
-
-        sendNotification("Ride Started 🚕", "Distance: 0.00 km | Fare will display when trip ends.");
-      } else {
-        alert("Geolocation is not supported on this browser.");
       }
     }
 
@@ -176,14 +170,8 @@
       const { latitude, longitude } = position.coords;
 
       if (lastCoords) {
-        const distDelta = getDistanceInKm(
-          lastCoords.latitude,
-          lastCoords.longitude,
-          latitude,
-          longitude
-        );
-        
-        if (distDelta > 0.005) {
+        const distDelta = getDistanceInKm(lastCoords.latitude, lastCoords.longitude, latitude, longitude);
+        if (distDelta > 0.003) { // 3 meters movement threshold
           totalDistance += distDelta;
           lastCoords = { latitude, longitude };
         }
@@ -192,46 +180,45 @@
       }
 
       document.getElementById('distance').innerText = `${totalDistance.toFixed(2)} km`;
-      sendNotification("Ride in Progress 📍", `Distance Traveled: ${totalDistance.toFixed(2)} km`);
     }
 
     function stopRide() {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-        lastCoords = null;
+      // Clear GPS and Timers
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      if (timerId !== null) clearInterval(timerId);
+      
+      watchId = null;
+      timerId = null;
+      lastCoords = null;
 
-        const finalFare = totalDistance * RATE_PER_KM;
-        document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
+      // Calculate final fare ONLY when stopped
+      const finalFare = totalDistance * RATE_PER_KM;
+      document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
 
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        startBtn.disabled = false;
-        startBtn.style.display = 'block';
-        stopBtn.style.display = 'none';
+      // Switch buttons back
+      document.getElementById('startBtn').style.display = 'block';
+      document.getElementById('stopBtn').style.display = 'none';
 
-        sendNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
-      }
+      // Send final stop notification
+      pushNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
     }
 
     function resetRide() {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-      }
-      
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      if (timerId !== null) clearInterval(timerId);
+
+      watchId = null;
+      timerId = null;
       totalDistance = 0;
       lastCoords = null;
+
       document.getElementById('distance').innerText = "0.00 km";
       document.getElementById('fare').innerText = "₹0.00";
 
-      const startBtn = document.getElementById('startBtn');
-      const stopBtn = document.getElementById('stopBtn');
-      startBtn.disabled = false;
-      startBtn.style.display = 'block';
-      stopBtn.style.display = 'none';
+      document.getElementById('startBtn').style.display = 'block';
+      document.getElementById('stopBtn').style.display = 'none';
 
-      sendNotification("Tracker Reset 🔄", "Distance and fare reset to zero.");
+      pushNotification("Tracker Reset 🔄", "Distance & fare reset to zero.");
     }
   </script>
 </body>
