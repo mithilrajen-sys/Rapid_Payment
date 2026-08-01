@@ -68,8 +68,8 @@
     .btn-start:hover { background: #059669; }
     .btn-stop { background: #ef4444; color: white; }
     .btn-stop:hover { background: #dc2626; }
-    .btn-test { background: #6366f1; color: white; }
-    .btn-test:hover { background: #4f46e5; }
+    .btn-reset { background: #64748b; color: white; }
+    .btn-reset:hover { background: #475569; }
   </style>
 </head>
 <body>
@@ -84,25 +84,25 @@
     
     <div class="metric-box">
       <div class="label">Total Fare (₹10 / km)</div>
-      <div class="metric" id="fare">₹0.00</div>
+      <div class="metric" id="fare">₹--.--</div>
     </div>
     
     <div class="btn-group">
       <button class="btn-start" onclick="startRide()">Start Tracking</button>
       <button class="btn-stop" onclick="stopRide()">Stop Tracking</button>
-      <button class="btn-test" onclick="testNotification()">Test Notification</button>
+      <button class="btn-reset" onclick="resetRide()">Reset</button>
     </div>
   </div>
 
   <script>
-    // Fare Configuration: ₹10 per km
+    // Rate Configuration: ₹10 per km
     const RATE_PER_KM = 10;
 
     let watchId = null;
     let totalDistance = 0; // in km
     let lastCoords = null;
 
-    // Haversine formula to compute distance between two GPS coordinates
+    // Haversine formula to compute distance between two GPS points
     function getDistanceInKm(lat1, lon1, lat2, lon2) {
       const R = 6371; // Earth radius in km
       const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -115,50 +115,21 @@
       return R * c; 
     }
 
-    // Function to handle showing system notifications with Distance & Fare
-    function triggerNotification(dist, fare) {
-      if ("Notification" in window && Notification.permission === "granted") {
-        const notif = new Notification("Trip Update 📍", {
-          body: `Distance: ${dist.toFixed(2)} km | Fare: ₹${fare.toFixed(2)}`,
-          tag: "fare-tracker-tag", // Overwrites previous notification so popups don't stack
-          renotify: true
-        });
-
-        // Clicking notification focuses back to this web app tab
-        notif.onclick = function() {
-          window.focus();
-        };
-      }
-    }
-
-    async function startRide() {
-      // 1. Request Notification Permission
-      if ("Notification" in window) {
-        if (Notification.permission !== "granted") {
-          const perm = await Notification.requestPermission();
-          if (perm !== "granted") {
-            alert("Please allow notification permissions to see updates!");
-          }
-        }
-      } else {
-        alert("Notifications are not supported by this browser.");
-      }
-
-      // 2. Start Continuous GPS Tracking with flexible timeout settings
+    function startRide() {
       if ("geolocation" in navigator) {
+        // Clear fare display when starting a new trip
+        document.getElementById('fare').innerText = "₹--.--";
+
         watchId = navigator.geolocation.watchPosition(
           updatePosition,
-          (err) => {
-            console.warn("GPS Notice:", err.message);
-            alert("GPS Error: " + err.message);
-          },
+          (err) => console.warn("GPS Error: " + err.message),
           { 
-            enableHighAccuracy: false, // Prevents strict GPS timeout indoors/desktops
-            maximumAge: 3000,          // Accepts position cached within 3 seconds
-            timeout: 20000             // 20-second timeout to give location service time to acquire fix
+            enableHighAccuracy: false,
+            maximumAge: 3000,
+            timeout: 20000 
           }
         );
-        alert("Tracking started! Move around to track distance.");
+        alert("Tracking started! Fare will calculate when you click 'Stop Tracking'.");
       } else {
         alert("Geolocation is not supported on this browser.");
       }
@@ -168,7 +139,6 @@
       const { latitude, longitude } = position.coords;
 
       if (lastCoords) {
-        // Calculate incremental distance from previous position
         const distDelta = getDistanceInKm(
           lastCoords.latitude,
           lastCoords.longitude,
@@ -185,15 +155,8 @@
         lastCoords = { latitude, longitude };
       }
 
-      // Calculate total fare (e.g. 4.6 km * 10 = ₹46.00)
-      const fare = totalDistance * RATE_PER_KM;
-
-      // Update Screen UI
+      // Update distance only on screen while tracking
       document.getElementById('distance').innerText = `${totalDistance.toFixed(2)} km`;
-      document.getElementById('fare').innerText = `₹${fare.toFixed(2)}`;
-
-      // Push notification with updated distance & fare
-      triggerNotification(totalDistance, fare);
     }
 
     function stopRide() {
@@ -201,24 +164,31 @@
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
         lastCoords = null;
-        alert("Tracking stopped.");
+
+        // Calculate and reveal final fare ONLY on stop
+        const finalFare = totalDistance * RATE_PER_KM;
+        document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
+        
+        alert("Trip Stopped! Final fare calculated.");
+      } else {
+        alert("Tracking is not currently active.");
       }
     }
 
-    // Manual test to confirm notifications work on your device right now
-    async function testNotification() {
-      if ("Notification" in window) {
-        if (Notification.permission !== "granted") {
-          await Notification.requestPermission();
-        }
-        if (Notification.permission === "granted") {
-          triggerNotification(4.60, 46.00); // Test display for 4.6km = ₹46.00
-        } else {
-          alert("Notification permission is blocked in browser settings.");
-        }
-      } else {
-        alert("Notifications not supported on this browser.");
+    function resetRide() {
+      // Stop tracking if currently active
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
       }
+      
+      // Reset variables & UI
+      totalDistance = 0;
+      lastCoords = null;
+      document.getElementById('distance').innerText = "0.00 km";
+      document.getElementById('fare').innerText = "₹0.00";
+      
+      alert("Tracker has been reset.");
     }
   </script>
 </body>
