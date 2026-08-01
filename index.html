@@ -14,7 +14,6 @@
       font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       text-align: center;
       padding: 20px;
-      /* Yellow background theme */
       background: #f1c40f; 
       color: #1a1a1a;
       min-height: 100vh;
@@ -70,16 +69,11 @@
       cursor: pointer;
       transition: transform 0.1s ease, background 0.2s ease;
     }
-    button:active {
-      transform: scale(0.98);
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-start { background: #27ae60; color: white; }
     .btn-start:hover:not(:disabled) { background: #219653; }
-    .btn-stop { background: #e74c3c; color: white; display: none; } /* Hidden by default */
+    .btn-stop { background: #e74c3c; color: white; display: none; }
     .btn-stop:hover { background: #c0392b; }
     .btn-reset { background: #4a4a4a; color: white; }
     .btn-reset:hover { background: #333333; }
@@ -108,16 +102,21 @@
   </div>
 
   <script>
-    // Fare Rate Configuration: ₹10 per km
     const RATE_PER_KM = 10;
-
     let watchId = null;
-    let totalDistance = 0; // in km
+    let totalDistance = 0;
     let lastCoords = null;
+    let swRegistration = null;
 
-    // Haversine formula to compute distance between two GPS coordinates
+    // Register Service Worker on Load
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => { swRegistration = reg; })
+        .catch(err => console.error("Service Worker failed:", err));
+    }
+
     function getDistanceInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371; // Earth's radius in km
+      const R = 6371;
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
       const a = 
@@ -128,42 +127,39 @@
       return R * c; 
     }
 
-    // Sends mobile background notification showing live distance
+    // Sends notification request to the registered Service Worker
     function sendNotification(title, body) {
-      if ("Notification" in window && Notification.permission === "granted") {
-        const notif = new Notification(title, {
-          body: body,
-          tag: "mobile-tracker-status", // Overwrites previous notification so popups don't stack
-          renotify: true
-        });
-
-        notif.onclick = function() {
-          window.focus(); // Focuses back to tab on click
-        };
+      if (swRegistration && Notification.permission === "granted") {
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'UPDATE_NOTIFICATION',
+            title: title,
+            body: body
+          });
+        } else {
+          swRegistration.showNotification(title, { body: body, tag: 'ride-tracker-status' });
+        }
       }
     }
 
     async function startRide() {
-      // 1. Request Notification Permission for Mobile Status Bar Updates
       if ("Notification" in window && Notification.permission !== "granted") {
         await Notification.requestPermission();
       }
 
-      // 2. Start Continuous GPS Tracking
       if ("geolocation" in navigator) {
-        document.getElementById('fare').innerText = "₹--.--"; // Keep fare hidden
+        document.getElementById('fare').innerText = "₹--.--";
 
         watchId = navigator.geolocation.watchPosition(
           updatePosition,
           (err) => console.warn("GPS Notice:", err.message),
           { 
-            enableHighAccuracy: false,
-            maximumAge: 3000,
+            enableHighAccuracy: true, // Set to true for mobile outdoors
+            maximumAge: 1000,
             timeout: 20000 
           }
         );
 
-        // UI State Change: Disable & Hide "Start Tracking", Show "End Trip"
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         startBtn.disabled = true;
@@ -187,7 +183,6 @@
           longitude
         );
         
-        // Filter out GPS jitter under 5 meters
         if (distDelta > 0.005) {
           totalDistance += distDelta;
           lastCoords = { latitude, longitude };
@@ -196,10 +191,7 @@
         lastCoords = { latitude, longitude };
       }
 
-      // Update distance on UI screen
       document.getElementById('distance').innerText = `${totalDistance.toFixed(2)} km`;
-
-      // Update mobile notification with current distance (Fare stays hidden)
       sendNotification("Ride in Progress 📍", `Distance Traveled: ${totalDistance.toFixed(2)} km`);
     }
 
@@ -209,21 +201,16 @@
         watchId = null;
         lastCoords = null;
 
-        // Calculate and reveal final fare ONLY on stop
         const finalFare = totalDistance * RATE_PER_KM;
         document.getElementById('fare').innerText = `₹${finalFare.toFixed(2)}`;
 
-        // UI State Change: Re-enable "Start Tracking" and Hide "End Trip"
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         startBtn.disabled = false;
         startBtn.style.display = 'block';
         stopBtn.style.display = 'none';
 
-        // Send final notification showing total distance and final fare
         sendNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ₹${finalFare.toFixed(2)}`);
-      } else {
-        alert("Tracking is not currently active.");
       }
     }
 
@@ -238,7 +225,6 @@
       document.getElementById('distance').innerText = "0.00 km";
       document.getElementById('fare').innerText = "₹0.00";
 
-      // UI State Change: Ensure buttons are back to default state
       const startBtn = document.getElementById('startBtn');
       const stopBtn = document.getElementById('stopBtn');
       startBtn.disabled = false;
