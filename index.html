@@ -73,8 +73,8 @@
       position: fixed;
       top: 0; left: 0;
       width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(4px);
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(5px);
       align-items: center;
       justify-content: center;
       z-index: 999;
@@ -93,7 +93,7 @@
     .modal-title {
       font-size: 1.2rem;
       color: #f1c40f;
-      margin-bottom: 10px;
+      margin-bottom: 5px;
     }
     .modal-amount {
       font-size: 1.8rem;
@@ -128,6 +128,35 @@
       color: #a0a0a0;
       margin-top: 3px;
     }
+
+    /* QR Code Display Container */
+    .qr-container {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 15px;
+      margin-top: 10px;
+      margin-bottom: 15px;
+    }
+    .qr-container img {
+      width: 200px;
+      height: 200px;
+      border-radius: 8px;
+    }
+    .qr-bank-info {
+      color: #1a1a1a;
+      font-weight: bold;
+      margin-top: 10px;
+      font-size: 0.95rem;
+    }
+    .qr-upi-info {
+      color: #666;
+      font-size: 0.8rem;
+    }
+
     .modal-close {
       background: transparent;
       border: 1px solid #555;
@@ -136,6 +165,17 @@
       width: 100%;
       margin-top: 10px;
       border-radius: 8px;
+    }
+    .btn-back-banks {
+      display: none;
+      background: #333;
+      border: 1px solid #555;
+      color: #f1c40f;
+      padding: 10px;
+      width: 100%;
+      margin-top: 10px;
+      border-radius: 8px;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -161,28 +201,39 @@
     </div>
   </div>
 
-  <!-- Bank Account Selection Modal -->
+  <!-- Payment Modal -->
   <div class="modal-overlay" id="paymentModal">
     <div class="modal-content">
-      <div class="modal-title">Select Receiving Bank Account</div>
+      <div class="modal-title" id="modalTitle">Select Receiving Bank Account</div>
       <div class="modal-amount" id="modalFareText">₹0.00</div>
 
-      <div class="bank-option" onclick="payViaUPI('7339519500@ptyes', 'Indian Bank')">
-        <div>
-          <div class="bank-name">🏦 Indian Bank</div>
-          <div class="bank-upi">7339519500@ptyes</div>
+      <!-- Bank Options List -->
+      <div id="bankList">
+        <div class="bank-option" onclick="showQRCode('7339519500@ptyes', 'Indian Bank')">
+          <div>
+            <div class="bank-name">🏦 Indian Bank</div>
+            <div class="bank-upi">7339519500@ptyes</div>
+          </div>
+          <span style="color:#f1c40f; font-size: 1.2rem;">➔</span>
         </div>
-        <span style="color:#f1c40f; font-size: 1.2rem;">➔</span>
+
+        <div class="bank-option" onclick="showQRCode('rmithil03@okhdfcbank', 'Union Bank')">
+          <div>
+            <div class="bank-name">🏦 Union Bank</div>
+            <div class="bank-upi">rmithil03@okhdfcbank</div>
+          </div>
+          <span style="color:#f1c40f; font-size: 1.2rem;">➔</span>
+        </div>
       </div>
 
-      <div class="bank-option" onclick="payViaUPI('rmithil03@okhdfcbank', 'Union Bank')">
-        <div>
-          <div class="bank-name">🏦 Union Bank</div>
-          <div class="bank-upi">rmithil03@okhdfcbank</div>
-        </div>
-        <span style="color:#f1c40f; font-size: 1.2rem;">➔</span>
+      <!-- Dynamic QR Code View -->
+      <div class="qr-container" id="qrContainer">
+        <img id="qrImage" src="" alt="UPI QR Code" />
+        <div class="qr-bank-info" id="qrBankName">Indian Bank</div>
+        <div class="qr-upi-info" id="qrUpiId">7339519500@ptyes</div>
       </div>
 
+      <button class="btn-back-banks" id="backBtn" onclick="showBankList()">Back to Accounts</button>
       <button class="modal-close" onclick="closeModal()">Close</button>
     </div>
   </div>
@@ -297,27 +348,42 @@
 
       sendSystemNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ${formattedFare}`);
 
-      // Open Payment Modal
+      // Reset and open modal to Bank List view
+      showBankList();
       document.getElementById('modalFareText').innerText = formattedFare;
       document.getElementById('paymentModal').style.display = 'flex';
     }
 
-    function payViaUPI(upiId, bankName) {
-      // Copy UPI ID to clipboard
-      navigator.clipboard.writeText(upiId);
-
-      // Deep-link trigger for phone's UPI Apps
+    function showQRCode(upiId, bankName) {
       const amount = calculatedFare.toFixed(2);
-      const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(bankName)}&am=${amount}&cu=INR`;
+      
+      // Standard UPI Payment URI
+      const upiString = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(bankName)}&am=${amount}&cu=INR`;
+      
+      // Generate QR Code image using Google Charts API
+      const qrApiUrl = `https://chart.googleapis.com/chart?cht=qr&chs=250x250&chl=${encodeURIComponent(upiString)}`;
 
-      sendSystemNotification("Payment Initiated 💳", `Transferring ${document.getElementById('modalFareText').innerText} to ${bankName}`);
+      // Update UI
+      document.getElementById('qrImage').src = qrApiUrl;
+      document.getElementById('qrBankName').innerText = bankName;
+      document.getElementById('qrUpiId').innerText = upiId;
 
-      // Redirect to UPI App on Mobile
-      window.location.href = upiUrl;
+      document.getElementById('modalTitle').innerText = "Scan QR Code to Pay";
+      document.getElementById('bankList').style.display = 'none';
+      document.getElementById('qrContainer').style.display = 'flex';
+      document.getElementById('backBtn').style.display = 'block';
+    }
+
+    function showBankList() {
+      document.getElementById('modalTitle').innerText = "Select Receiving Bank Account";
+      document.getElementById('bankList').style.display = 'block';
+      document.getElementById('qrContainer').style.display = 'none';
+      document.getElementById('backBtn').style.display = 'none';
     }
 
     function closeModal() {
       document.getElementById('paymentModal').style.display = 'none';
+      showBankList();
     }
 
     function resetRide() {
