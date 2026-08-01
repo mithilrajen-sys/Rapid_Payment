@@ -142,19 +142,21 @@
       margin-bottom: 15px;
     }
     .qr-container img {
-      width: 200px;
-      height: 200px;
+      width: 220px;
+      height: 220px;
       border-radius: 8px;
     }
     .qr-bank-info {
       color: #1a1a1a;
       font-weight: bold;
       margin-top: 10px;
-      font-size: 0.95rem;
+      font-size: 1rem;
     }
     .qr-upi-info {
-      color: #666;
-      font-size: 0.8rem;
+      color: #555;
+      font-size: 0.85rem;
+      font-family: monospace;
+      margin-top: 2px;
     }
 
     .modal-close {
@@ -228,7 +230,7 @@
 
       <!-- Dynamic QR Code View -->
       <div class="qr-container" id="qrContainer">
-        <img id="qrImage" src="" alt="UPI QR Code" />
+        <img id="qrImage" src="" alt="Scan QR Code" />
         <div class="qr-bank-info" id="qrBankName">Indian Bank</div>
         <div class="qr-upi-info" id="qrUpiId">7339519500@ptyes</div>
       </div>
@@ -348,7 +350,6 @@
 
       sendSystemNotification("Trip Ended 🛑", `Total Distance: ${totalDistance.toFixed(2)} km | Final Fare: ${formattedFare}`);
 
-      // Reset and open modal to Bank List view
       showBankList();
       document.getElementById('modalFareText').innerText = formattedFare;
       document.getElementById('paymentModal').style.display = 'flex';
@@ -357,13 +358,12 @@
     function showQRCode(upiId, bankName) {
       const amount = calculatedFare.toFixed(2);
       
-      // Standard UPI Payment URI
-      const upiString = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(bankName)}&am=${amount}&cu=INR`;
+      // Standard UPI Deep Link Query String
+      const upiURI = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(bankName)}&am=${amount}&cu=INR`;
       
-      // Generate QR Code image using Google Charts API
-      const qrApiUrl = `https://chart.googleapis.com/chart?cht=qr&chs=250x250&chl=${encodeURIComponent(upiString)}`;
+      // Reliable QRServer Generator Endpoint
+      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiURI)}`;
 
-      // Update UI
       document.getElementById('qrImage').src = qrApiUrl;
       document.getElementById('qrBankName').innerText = bankName;
       document.getElementById('qrUpiId').innerText = upiId;
